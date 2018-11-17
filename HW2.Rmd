@@ -1,0 +1,164 @@
+---
+title: "HW2"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE,warning=FALSE,message=FALSE}
+library(tidyverse)
+species_data <- read_csv("../HW_data/SpeciesObservations-2018-11-07-14-23-54.csv")
+#glimpse(species_data)
+names(species_data) <- gsub(" ", "_", names(species_data))
+```
+
+
+Antalet av varje fågelart som skådades under Januari och Juli.
+
+
+```{r,echo=FALSE, message=FALSE,warning=FALSE}
+#glimpse(species_data)
+species_data <- species_data %>%
+  mutate(Start = as.Date(Start),
+         End = as.Date(End),
+         Uncertain_determination = as.logical(Uncertain_determination), 
+         Date = Start)
+birds_data <-filter(species_data, Organism_group == "Fåglar")
+birds_data_jan <- birds_data %>%
+  mutate(Date = format(Date, format="%b")) %>%
+  filter(Date == "jan") %>%
+  count(Common_name) %>%
+  arrange(desc(n))
+birds_data_jul<- birds_data %>%
+  mutate(Date = format(Date, format="%b")) %>%
+  filter(Date == "jul") %>%
+  count(Common_name) %>%
+  arrange(desc(n))
+
+knitr::kable(birds_data_jan,
+             col.names = c("Common name",
+                           "Observed (In January)"
+                           )
+             )
+knitr::kable(birds_data_jul,
+             col.names = c("Common name",
+                           "Observed (In July)"
+                           )
+             )
+
+```
+
+En barplot som visar veckodagar och hur många fåglar som skådades under respektive veckodag.
+
+
+```{r,echo=FALSE}
+species_data_weekdays <- species_data %>%
+  mutate(Weekday = weekdays(Date)) %>%
+  group_by(Weekday)
+ggplot(species_data_weekdays, mapping = aes(x = factor(Weekday,
+                                          levels= c("måndag","tisdag", "onsdag", "torsdag", "fredag", "lördag", "söndag")))) +
+         geom_bar() +
+  labs(x = "Veckodag",y = "Antal")
+```
+
+
+En simpel tabell som visar de första fem unika åskådarna av lövsångare
+
+
+```{r,echo=FALSE}
+species_data_lovsangare <- species_data %>%
+  filter(Scientific_name == "Phylloscopus trochilus")%>%
+  arrange(Date)%>%
+  ungroup(Weekday)%>%
+  select( Recorded_by, Date)%>%
+  mutate(Date = format(Date, format="%d %b %y"))
+knitr::kable(head(species_data_lovsangare,5))
+
+
+```
+
+
+Nedan illustreras antalet observerade lövsångare och talgoxar, sorterade enligt den månad de blev observerade.
+
+```{r,echo=FALSE}
+species_data_lov_talg <- species_data %>%
+  filter(Common_name %in% c("lövsångare", "talgoxe"))%>%
+  mutate(Month = months(Date))%>%
+  group_by(Month)%>%
+  count(Common_name)%>%
+  ggplot(mapping = aes(x=Month,y=n,color=Common_name)) + 
+  geom_point() +
+  labs(x="Månad", y="Antal observerade", color="Fågel")
+species_data_lov_talg 
+```
+
+
+```{r,echo=FALSE,message=FALSE,warning=FALSE}
+Apartment_prices <- read_csv("../HW_data/booli_sold.csv")
+```
+
+Denna plot visar samband mellan Boarea och säljpris.
+
+
+```{r,echo=FALSE,warning=FALSE,message=FALSE}
+regression_plot<-lm(data = Apartment_prices, soldPrice ~ livingArea)
+ggplot(regression_plot, mapping = aes(x = soldPrice,y = livingArea)) +
+  geom_smooth(se=FALSE) +
+  labs(x="Säljpris", y = "Boarea") + 
+  geom_point()
+```
+
+Graferna under syftar på att se om det finns någon månads- och årstrend när det gäller kvadratmeterpriset.
+
+```{r,echo=FALSE}
+Apartment_prices_trends1 <- Apartment_prices %>%
+  mutate(soldDate = format(soldDate,format="%Y"))%>%
+  mutate(price_per_sqm = soldPrice / livingArea)%>%
+  ggplot(mapping = aes(x=soldDate, y=price_per_sqm)) + 
+  geom_point(na.rm=T) +
+  labs(x="Säljår", y="Pris per kvadratmeter")
+Apartment_prices_trends1
+Apartment_prices_trends2 <- Apartment_prices %>%
+  mutate(soldDate = format(soldDate,format="%b"))%>%
+  mutate(price_per_sqm = soldPrice / livingArea)%>%
+  ggplot(mapping = aes(x=soldDate, y=price_per_sqm)) + 
+  geom_point(na.rm=T) +
+  labs(x="Säljmånad", y="Pris per kvadratmeter")
+Apartment_prices_trends2
+```
+
+I denna tabell så har jag valt att visa medelvärdet på kvadratmeterpriset, sorterat efter månad.
+
+
+```{r,echo=FALSE}
+aspect_tabell<- Apartment_prices %>%
+  mutate(soldDate = format(soldDate,format="%b"))%>%
+  mutate(price_per_sqm = soldPrice / livingArea)%>%
+  group_by(soldDate)%>%
+  summarise(
+    Medelpris = mean(price_per_sqm, na.rm=TRUE))
+knitr::kable(aspect_tabell,col.names=c("Säljmånad","Medelpris av Kvm"))
+```
+
+
+Histogrammet visar hur många lägenheter som hade x antal rum.
+
+```{r,echo=FALSE,warning=FALSE,message=FALSE}
+ggplot(data=Apartment_prices, mapping = aes(rooms)) + 
+  geom_histogram() +
+  labs(x = "Antal rum", y = "Count")
+```
+
+
+I boxplotten nedan illustreras mäklarfirma mot Säljpris.
+
+
+```{r,echo=FALSE,warning=FALSE}
+ggplot(data=Apartment_prices, mapping = aes(x=source.name,y = soldPrice)) +
+  geom_boxplot() +
+  labs(x="mäklarfirma",y="Säljpris") +
+  coord_flip()
+```
+
