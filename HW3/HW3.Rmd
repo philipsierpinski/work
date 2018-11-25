@@ -1,0 +1,173 @@
+---
+title: "Homework 3"
+author: "Philip Sierpinski"
+date: "24 november 2018"
+output: github_document
+---
+  ```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Uppgift 1
+
+
+My "wide table" shows the amount of savings (in Mkr) of a certain sector in the swedish economy per year and quartile.
+
+My tide in the "wide" format.
+
+
+```{r,message=FALSE}
+library(tidyverse)
+data_points<-data.frame(-5079, 2335, 2114, -4108, 11138, 887, 833, -1129, 3410, 13102, -3483, -10901, 1170, 1727, 4126, -3421, 2780, 165, 6370, 10111, 24977, 5617, 19493, 8380, 4795, -4366, 6116, 3394, 4467, 2881)
+names(data_points) <- c("2009K2","2009K3","2009K4","2010K1","2010K2","2010K3","2010K4","2011K1","2011K2","2011K3","2011K4","2012K1","2012K2","2012K3","2012K4","2013K1","2013K2","2013K3","2013K4","2014K1","2014K2","2014K3","2014K4","2015K1","2015K2","2015K3","2015K4","2016K1","2016K2","2016K3")
+
+knitr::kable(data_points)
+
+```
+
+
+My converted long table
+
+
+```{r}
+data_points%>% 
+  gather(names(data_points),key="year", value="data_points") %>%
+  separate(year, into = c("year", "Kvartal"), sep = "K", convert=TRUE)%>%
+  knitr::kable()
+
+
+```
+
+
+By converting to a long format i can now easier filter the variables.
+
+
+```{r}
+data_points%>% 
+  gather(names(data_points),key="year", value="data_points") %>%
+  separate(year, into = c("year", "Kvartal"), sep = "K", convert=TRUE)%>%
+  filter(year=="2009")%>%
+  knitr::kable()
+
+```
+
+
+My long table shows the age group along with the sex of people moving out of stockholm. By spreading the data I can easier illustrate how men in different age groups compare to eachother.
+
+
+```{r,message=FALSE,warning=FALSE}
+male_data <- read_csv("../HW3/HW3_files/datan.csv")
+male_data<-male_data%>%
+  select(age,sex,"1991")
+knitr::kable(male_data)
+
+
+
+
+```
+
+
+
+
+```{r}
+male_data_use<-male_data%>%
+  select(age,sex,"1991")%>%
+  spread(key="sex", value="1991")
+
+knitr::kable(male_data_use)
+```
+
+
+
+
+```{r}
+ggplot(male_data_use,aes(age,men)) + 
+  geom_point() +
+  ggtitle("Utflyttningar av män från Stockholm år 1991")+
+  labs(y="Antal",x="Åldersgrupp")
+```
+
+
+##UPPGIFT 2
+
+
+```{r,warning=FALSE,message=FALSE}
+stop_area<-read_csv("../HW_data/StopArea.csv")
+Line <-read_csv("../HW_data/Line.csv")
+Journey_Pattern <- read_csv("../HW_data/JourneyPattern.csv")
+Journey_Pattern <- Journey_Pattern %>%
+  mutate(JourneyPatternPointNumber = as.integer(JourneyPatternPointNumber))
+```
+
+
+```{r}
+stop_area%>%
+  count(StopPointNumber) #<--- primary
+Journey_Pattern%>%   #<---primary
+  count(JourneyPatternPointNumber,LineNumber,DirectionCode)
+matches<-stop_area %>% 
+   semi_join(Journey_Pattern, c("StopPointNumber" = "JourneyPatternPointNumber"))
+```
+
+
+
+JourneyPatternPointNumber corresponds to StopPointNumber, where StopPointNumber corresponds to a StopPoint with a name. From there we can figure out a route and map the different stoppoint names.
+
+StopArea contains information about the different stop points, JourneyPattern contains information about the different routes for all the public transportations, Lines contains all the information about the method of the transportation.
+
+
+
+Each unique JourneyPatternPointNumber is _not_ matched in StopPointNumber in the StopArea table. I have here filtered out all the unique JourneyPatternPointNumber that _cannot_ be matched in StopPointNumber.
+
+```{r}
+mismatch<-Journey_Pattern %>%
+  anti_join(stop_area,c("JourneyPatternPointNumber" = "StopPointNumber"))%>%
+  group_by(JourneyPatternPointNumber)%>%
+  summarise(n = n()) %>%
+  arrange(desc(n))%>%
+  head(10)
+mismatch
+```
+
+As seen there are 281 unique JourneyPatternPointNumber's that are not matched by StopPointNumbers in StopArea. After a long time of pondering I still dont feel comfortable with my assessment, but my best guess is that the JourneyPatternPointNumbers that dont have a matching StopPointNumber in StopArea are inactive or out of service. Most of the JourneyPatternPointNumbers are also under 1000, which seem to be of the StopAreaTypeCode SHIPBER.
+
+If these mismatched PatternNumbers are indeed inactive stations, I would mutate a new binary variable that states if a StopPointNumber is 1(active) or 0(inactive).
+
+
+
+
+The number of active busstops in the different zones
+
+```{r}
+#Join the tables together
+#filter to busses only, remove "inactive"
+#Group by Zone names and display only unique JourneyPatterns(which are matched to StopPoints) and summarise them
+busstops<-Journey_Pattern%>%
+  left_join(Line, by = "LineNumber")%>%
+  left_join(stop_area, c("JourneyPatternPointNumber" = "StopPointNumber"))%>%
+  filter(DefaultTransportModeCode=="BUS", !is.na(StopPointName))%>%
+  group_by(ZoneShortName)%>%
+  distinct(JourneyPatternPointNumber)%>%
+  summarise(n = n())
+busstops
+```
+
+
+I have here chosen to plot the bus "50", a change in the filter option can generalise this to any LineNumber.
+
+```{r}
+library(ggmap)
+load("../HW_data/Stockholm_map.Rdata")
+matches3<-stop_area%>%
+  left_join(Journey_Pattern, c("StopPointNumber" = "JourneyPatternPointNumber"))
+MyRoute<- matches3 %>%
+  rename(lon = LocationEastingCoordinate, lat = LocationNorthingCoordinate, name = StopPointName)%>%
+  group_by(name)%>%
+  filter(LineNumber=="50", DirectionCode == "1")
+  
+ggmap(stockholm) + geom_point(data = MyRoute, aes(x = lon, y = lat)) +
+    geom_text(data = MyRoute, aes(x = lon, y = lat, label = name), nudge_y = .003, color = "red", size=2)
+
+```
+
+
