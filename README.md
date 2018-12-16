@@ -14,3 +14,6 @@ Link to my homework part 4!
 
 https://github.com/MT5013-HT18/HW_Philipsierpinski/blob/master/HW5/HW5.md
 Link to my homework part 5!
+
+https://github.com/MT5013-HT18/HW_Philipsierpinski/blob/master/HW6/HW6.md
+Link to my homework part 6!
