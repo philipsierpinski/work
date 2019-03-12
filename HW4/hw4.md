@@ -47,25 +47,7 @@ glimpse(butik_ombud)
 assortment <- dbGetQuery(my_db, "SELECT Nr AS Store, Address5 AS county, Address4 as City, stock.Varugrupp AS Product, stock.AntalProdukter
 FROM store JOIN stock
 ON store.Nr = stock.ButikNr")
-
-assortment_wide <- assortment %>%
-  group_by(Store)%>%
-  mutate(AntalProdukter = AntalProdukter / sum(AntalProdukter)) %>%
-  spread(key = Product,value = AntalProdukter)
-
-x<-assortment_wide[,4:21]%>%
-  mutate_all(scale)
-
-
-
-u <- svd(na.omit(x))$u
-d <- svd(na.omit(x))$d
-v <- svd(na.omit(x))$v
-
-plot(u[,1]*d[1], u[,2]*d[2], xlim = c(-10, 10), ylim = c(-10,10))
 ```
-
-![](hw4_files/figure-markdown_github/unnamed-chunk-4-1.png)
 
 If there are more stores than agents we get a higher "ratio".
 
@@ -107,10 +89,6 @@ counties<-counties %>%
   left_join(type_butik, by="county")
 
 
-  
-
-
-
 
 ggplot(counties) + geom_polygon(aes(x = long, y = lat, group = group, fill = Ratio)) +
     coord_fixed() +
@@ -121,28 +99,157 @@ ggplot(counties) + geom_polygon(aes(x = long, y = lat, group = group, fill = Rat
 
 The visual cluster does show a few clusters present.
 
+Komplettering - Product Patterns
+--------------------------------
+
 ``` r
-assortment_wide[,4:21]%>%
-  dist()%>%
-  hclust()%>%
-    plot(hang = -1)
+my_scale <- function(x)((x-mean(x))/sd(x))
+
+assortment_wide <- assortment %>%
+  group_by(Store)%>%
+  mutate_if(is.numeric, funs(. / sum(AntalProdukter))) %>% #räknar ut andelen
+  spread(key = Product,value = AntalProdukter)
+
+assortment_wide[is.na(assortment_wide)] <- 0 #replace NA's med 0
+
+
+x<-assortment_wide[,4:21]%>% #scalar alla produkter
+  mutate_all(my_scale)
+
+SVD <- svd(x)
+
+u <- SVD$u
+colnames(u) <- paste0("col" ,c(1:ncol(u)))
+
+u<- as.data.frame(u)
+
+decomp <- assortment_wide %>% 
+  bind_cols(assortment_wide, u[, 1:2])
+
+decomp_graph_cols <- ggplot(data=decomp, aes(col1,col2))  +
+  geom_point()
+
+decomp_graph_cols #plottar 
 ```
 
 ![](hw4_files/figure-markdown_github/unnamed-chunk-6-1.png)
 
 ``` r
-x<-assortment_wide[,4:21]%>%
-  mutate_all(scale)
-heatmap(as.matrix(x))
+decomp_identify <- decomp %>% 
+  filter(col1 >= 0.1 & col2>=0.3) #identifierar outliers 
 ```
 
-![](hw4_files/figure-markdown_github/unnamed-chunk-7-1.png)
+The outliers as seen are:
 
 ``` r
-u1 <- svd(na.omit(t(x)))$u
-d1 <- svd(na.omit(t(x)))$d
-v1 <- svd(na.omit(t(x)))$v
-plot(u1[,1]*d1[1], u1[,2]*d1[2], xlim = c(-30, 30), ylim = c(-30,30))
+#identifying outliers
+decomp_identify
+```
+
+    ## # A tibble: 2 x 44
+    ## # Groups:   Store [2]
+    ##   Store county City  `Akvavit och Kr~ Alkoholfritt   Cider  Cognac
+    ##   <chr> <chr>  <chr>            <dbl>        <dbl>   <dbl>   <dbl>
+    ## 1 0110  Stock~ STOC~          0.00504       0.0756 0.00840 0.00168
+    ## 2 0166  Stock~ STOC~          0.00613       0.0773 0.00859 0.00245
+    ## # ... with 37 more variables: `Gin och Genever` <dbl>, `Glögg och
+    ## #   Glühwein` <dbl>, Likör <dbl>, `Mousserande vin` <dbl>, Portvin <dbl>,
+    ## #   Rom <dbl>, Rosévin <dbl>, `Rött vin` <dbl>, Sherry <dbl>,
+    ## #   Whisky <dbl>, `Vitt vin` <dbl>, `Vodka och Brännvin` <dbl>, Öl <dbl>,
+    ## #   Övrigt <dbl>, Store1 <chr>, county1 <chr>, City1 <chr>, `Akvavit och
+    ## #   Kryddat brännvin1` <dbl>, Alkoholfritt1 <dbl>, Cider1 <dbl>,
+    ## #   Cognac1 <dbl>, `Gin och Genever1` <dbl>, `Glögg och Glühwein1` <dbl>,
+    ## #   Likör1 <dbl>, `Mousserande vin1` <dbl>, Portvin1 <dbl>, Rom1 <dbl>,
+    ## #   Rosévin1 <dbl>, `Rött vin1` <dbl>, Sherry1 <dbl>, Whisky1 <dbl>, `Vitt
+    ## #   vin1` <dbl>, `Vodka och Brännvin1` <dbl>, Öl1 <dbl>, Övrigt1 <dbl>,
+    ## #   col1 <dbl>, col2 <dbl>
+
+``` r
+clusters <- decomp %>%
+  ungroup(Store) %>% 
+  select(col1, col2) %>%
+  dist() %>%
+  hclust()
+plot(clusters)
 ```
 
 ![](hw4_files/figure-markdown_github/unnamed-chunk-8-1.png)
+
+``` r
+clusters_grouping <- cutree(clusters, 6) ##delar in i 6 clusters
+assortment2 <- cbind(decomp, ClusterGroup = factor(clusters_grouping)) 
+
+
+ggplot(data=assortment2,aes(col1,col2, color = ClusterGroup)) +
+  geom_point()
+```
+
+![](hw4_files/figure-markdown_github/unnamed-chunk-8-2.png)
+
+Applying hierarchical clustering to the data divides the set into distinct groups. I'd say the colored clusters do agree pretty well with the visual clusters in the previous plot. ClusterGroup 3 (green) does however seem to have several "mini-clusters" within itself.
+
+``` r
+x_tran <- t(x)
+
+SVD_tran <- svd(x_tran)
+
+u_tran <- SVD_tran$u
+u_tran <- as.data.frame(u_tran)
+
+rownames(u_tran) <- rownames(x_tran) #behövs för att kunna plotta heatmapen korrekt senare
+
+u_tran2 <- SVD_tran$u  #behövs för att sortera produkter enligt cluster group
+u_tran2 <- as.data.frame(u_tran2)
+
+
+
+clusters_tran2 <- u_tran2 %>%
+  select(V1, V2) %>%
+  dist() %>%
+  hclust()
+
+clusters_tran <- u_tran %>% 
+  select(V1, V2) %>%
+  dist() %>%
+  hclust()
+plot(clusters_tran) #
+```
+
+![](hw4_files/figure-markdown_github/unnamed-chunk-9-1.png)
+
+``` r
+clusters_grouping_tran <- cutree(clusters_tran, 5) # ser indelning
+```
+
+``` r
+clusterordning<- cutree(clusters_tran2, 5)
+col_names <- colnames(assortment_wide[4:21]) #column names for heatmap
+
+
+korrekt_ordning<- as.data.frame(col_names) #to make sure col names are ordered correctly
+korrekt_ordning <- korrekt_ordning %>% 
+  mutate(cluster=clusterordning) %>% 
+  arrange(cluster)
+```
+
+``` r
+type_and_clusters <- decomp %>%
+  select(col_names,Store) %>% 
+  gather(col_names, key = Product, value = andel) %>% 
+  mutate(skalerad_andel = my_scale(andel), Product = factor(Product, levels=(korrekt_ordning$col_names)))
+#gör om Product till factor för att kunna ordna dem enligt cluster grupp
+type_and_clusters %>% 
+  ggplot(aes(x = Store, y = Product)) + geom_tile(aes(fill = skalerad_andel)) + scale_fill_gradient2() + xlab("Stores") + scale_y_discrete(labels = paste0(korrekt_ordning$col_names, 
+                                  as.character(korrekt_ordning$cluster)))
+```
+
+![](hw4_files/figure-markdown_github/unnamed-chunk-11-1.png)
+
+In the heatmap above you can see the what cluster each type of drink belongs to. You can also tell what type of drinks are most available in stores. Rött vin, Vitt vin and Öl represent a large portion of most stores inventory.
+
+``` r
+#plotting dendrogram of transpose of x
+plot(clusters_tran)
+```
+
+![](hw4_files/figure-markdown_github/unnamed-chunk-12-1.png)

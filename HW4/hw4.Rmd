@@ -2,7 +2,7 @@
 title: "HW4"
 author: "Philip Sierpinski"
 date: "1 december 2018"
-output: html_document
+output: github_document
 ---
 
 ```{r setup, include=FALSE}
@@ -47,21 +47,7 @@ assortment <- dbGetQuery(my_db, "SELECT Nr AS Store, Address5 AS county, Address
 FROM store JOIN stock
 ON store.Nr = stock.ButikNr")
 
-assortment_wide <- assortment %>%
-  group_by(Store)%>%
-  mutate(AntalProdukter = AntalProdukter / sum(AntalProdukter)) %>%
-  spread(key = Product,value = AntalProdukter)
 
-x<-assortment_wide[,4:21]%>%
-  mutate_all(scale)
-
-
-
-u <- svd(na.omit(x))$u
-d <- svd(na.omit(x))$d
-v <- svd(na.omit(x))$v
-
-plot(u[,1]*d[1], u[,2]*d[2], xlim = c(-10, 10), ylim = c(-10,10))
 ```
 
 If there are more stores than agents we get a higher "ratio".
@@ -87,10 +73,6 @@ counties<-counties %>%
   left_join(type_butik, by="county")
 
 
-  
-
-
-
 
 ggplot(counties) + geom_polygon(aes(x = long, y = lat, group = group, fill = Ratio)) +
     coord_fixed() +
@@ -98,27 +80,143 @@ ggplot(counties) + geom_polygon(aes(x = long, y = lat, group = group, fill = Rat
 
 ```
 
-The visual cluster does show a few clusters present.
+
+
+
+
+##Komplettering - Product Patterns
 
 
 ```{r}
-assortment_wide[,4:21]%>%
-  dist()%>%
-  hclust()%>%
-    plot(hang = -1)
+my_scale <- function(x)((x-mean(x))/sd(x))
+
+assortment_wide <- assortment %>%
+  group_by(Store)%>%
+  mutate_if(is.numeric, funs(. / sum(AntalProdukter))) %>% #räknar ut andelen
+  spread(key = Product,value = AntalProdukter)
+
+assortment_wide[is.na(assortment_wide)] <- 0 #replace NA's med 0
+
+
+x<-assortment_wide[,4:21]%>% #scalar alla produkter
+  mutate_all(my_scale)
+
+SVD <- svd(x)
+
+u <- SVD$u
+colnames(u) <- paste0("col" ,c(1:ncol(u)))
+
+u<- as.data.frame(u)
+
+decomp <- assortment_wide %>% 
+  bind_cols(assortment_wide, u[, 1:2])
+
+decomp_graph_cols <- ggplot(data=decomp, aes(col1,col2))  +
+  geom_point()
+
+decomp_graph_cols #plottar 
+
+decomp_identify <- decomp %>% 
+  filter(col1 >= 0.1 & col2>=0.3) #identifierar outliers 
+
+
+
 ```
-  
-  
+
+
+The outliers as seen are:
+
 ```{r}
-x<-assortment_wide[,4:21]%>%
-  mutate_all(scale)
-heatmap(as.matrix(x))
+#identifying outliers
+decomp_identify
 ```
-  
+
+
+
+
 ```{r}
-u1 <- svd(na.omit(t(x)))$u
-d1 <- svd(na.omit(t(x)))$d
-v1 <- svd(na.omit(t(x)))$v
-plot(u1[,1]*d1[1], u1[,2]*d1[2], xlim = c(-30, 30), ylim = c(-30,30))
+clusters <- decomp %>%
+  ungroup(Store) %>% 
+  select(col1, col2) %>%
+  dist() %>%
+  hclust()
+plot(clusters)
+
+clusters_grouping <- cutree(clusters, 6) ##delar in i 6 clusters
+assortment2 <- cbind(decomp, ClusterGroup = factor(clusters_grouping)) 
+
+
+ggplot(data=assortment2,aes(col1,col2, color = ClusterGroup)) +
+  geom_point()
+
+```
+
+Applying hierarchical clustering to the data divides the set into distinct groups. I'd say the colored clusters do agree pretty well with the visual clusters in the previous plot. ClusterGroup 3 (green) does however seem to have several "mini-clusters" within itself.
+
+```{r}
+x_tran <- t(x)
+
+SVD_tran <- svd(x_tran)
+
+u_tran <- SVD_tran$u
+u_tran <- as.data.frame(u_tran)
+
+rownames(u_tran) <- rownames(x_tran) #behövs för att kunna plotta heatmapen korrekt senare
+
+u_tran2 <- SVD_tran$u  #behövs för att sortera produkter enligt cluster group
+u_tran2 <- as.data.frame(u_tran2)
+
+
+
+clusters_tran2 <- u_tran2 %>%
+  select(V1, V2) %>%
+  dist() %>%
+  hclust()
+
+clusters_tran <- u_tran %>% 
+  select(V1, V2) %>%
+  dist() %>%
+  hclust()
+
+clusters_grouping_tran <- cutree(clusters_tran, 5) # ser indelning
+```
+
+
+```{r}
+
+
+clusterordning<- cutree(clusters_tran2, 5)
+col_names <- colnames(assortment_wide[4:21]) #column names for heatmap
+
+
+korrekt_ordning<- as.data.frame(col_names) #to make sure col names are ordered correctly
+korrekt_ordning <- korrekt_ordning %>% 
+  mutate(cluster=clusterordning) %>% 
+  arrange(cluster)
+
+
+```
+
+
+```{r}
+type_and_clusters <- decomp %>%
+  select(col_names,Store) %>% 
+  gather(col_names, key = Product, value = andel) %>% 
+  mutate(skalerad_andel = my_scale(andel), Product = factor(Product, levels=(korrekt_ordning$col_names)))
+#gör om Product till factor för att kunna ordna dem enligt cluster grupp
+type_and_clusters %>% 
+  ggplot(aes(x = Store, y = Product)) + geom_tile(aes(fill = skalerad_andel)) + scale_fill_gradient2() + xlab("Stores") + scale_y_discrete(labels = paste0(korrekt_ordning$col_names, 
+                                  as.character(korrekt_ordning$cluster)))
+
+
+```
+
+In the heatmap above you can see the what cluster each type of drink belongs to. You can also tell what type of drinks are most available in stores. Rött vin, Vitt vin and Öl represent a large portion of most stores inventory.
+
+
+
+```{r}
+#plotting dendrogram of transpose of x
+plot(clusters_tran)
 ```
 
